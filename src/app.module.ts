@@ -4,6 +4,7 @@ import { LoggerModule } from "./logger/logger.module";
 import { ConfigModule, ConfigService } from "@nestjs/config";
 import { DatabaseModule } from "@thesleepcompany/db-wrapper"; // install @thesleepcompany/db-wrapper for database
 import { OrdersModule } from "./modules/orders/orders.module";
+import { NotificationsModule } from "./modules/notifications/notifications.module";
 import { AppController } from "./app.controller";
 import { AppService } from "./app.service";
 import { loadConfig } from "./config/config.loader";
@@ -41,6 +42,7 @@ import { HttpModule } from "@nestjs/axios";
       }),
     }),
     OrdersModule,
+    NotificationsModule,
     TemplateModule,
   ],
   controllers: [AppController, HealthController],
