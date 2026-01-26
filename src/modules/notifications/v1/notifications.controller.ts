@@ -6,7 +6,7 @@ import { WhatsappService } from '../services/whatsapp.service';
 import { CreateSmsNotificationDto, CreateEmailNotificationDto, CreateWhatsappNotificationDto } from '../dtos/create-notification.dto';
 
 @ApiTags('Notifications')
-@Controller('v1/notifications')
+@Controller('notifications')
 export class NotificationsController {
     constructor(
         private readonly smsService: SmsService,

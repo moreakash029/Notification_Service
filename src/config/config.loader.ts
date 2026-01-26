@@ -18,11 +18,11 @@ export const loadConfig = async () => {
         const config: AppConfig = {
             NODE_ENV: env,
             PORT: secrets.PORT || 3000,
-            DB_URL: secrets.MONGODB_URL,
+            DB_URL: process.env.MONGODB_URI || secrets.MONGODB_URL,
             APP_TIMEZONE: secrets.APP_TIMEZONE,
         };
 
-       return validateConfig(config)
+        return validateConfig(config)
     } catch (error) {
         console.error("Failed to load config:", error);
         throw error;

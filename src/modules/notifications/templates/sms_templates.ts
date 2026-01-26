@@ -78,6 +78,8 @@ export const smstemplateDetail = function (template_attributes) {
     headers: {},
   };
 
+  sms.ORDER_PLACED = sms.orderReceiveTemplate;
+
   sms.shippedTemplate = {
     method: "post",
     maxBodyLength: Infinity,

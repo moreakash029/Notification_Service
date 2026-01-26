@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { HttpService } from '@nestjs/axios';
 import { CreateWhatsappNotificationDto } from '../dtos/create-notification.dto';
 import { templateDetail } from '../templates/whatsapp_templates';
+import { WhatsappLoggingService } from './whatsapp-logging.service';
 import { lastValueFrom } from 'rxjs';
 
 @Injectable()
@@ -11,7 +12,8 @@ export class WhatsappService {
 
     constructor(
         private readonly configService: ConfigService,
-        private readonly httpService: HttpService
+        private readonly httpService: HttpService,
+        private readonly whatsappLoggingService: WhatsappLoggingService,
     ) { }
 
     async sendWhatsapp(dto: CreateWhatsappNotificationDto) {
@@ -30,9 +32,21 @@ export class WhatsappService {
         try {
             const response = await this.sendToProvider(templateInfo);
             this.logger.log("Whatsapp sent successfully", response);
+
+            // Log to MongoDB
+            await this.whatsappLoggingService.logWhatsappSuccess(response, template_attributes);
+
             return { message: "Message sent successfully", providerResponse: response };
         } catch (error) {
             this.logger.error(`Error sending Whatsapp`, error);
+
+            // Log error to MongoDB
+            await this.whatsappLoggingService.logWhatsappError(
+                template_attributes?.phoneNo || 'unknown',
+                error,
+                template_attributes
+            );
+
             throw error;
         }
     }

@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { SQSClient, SendMessageCommand } from '@aws-sdk/client-sqs';
 import { CreateSmsNotificationDto } from '../dtos/create-notification.dto';
 import { smstemplateDetail } from '../templates/sms_templates';
+import { SmsLoggingService } from './sms-logging.service';
 import moment from 'moment-timezone';
 
 @Injectable()
@@ -11,7 +12,10 @@ export class SmsService {
     private readonly sqsClient: SQSClient;
     private readonly queueUrl: string;
 
-    constructor(private readonly configService: ConfigService) {
+    constructor(
+        private readonly configService: ConfigService,
+        private readonly smsLoggingService: SmsLoggingService,
+    ) {
         const accessKeyId = this.configService.get<string>('AWS_ACCESS_KEY_ID');
         const secretAccessKey = this.configService.get<string>('AWS_SECRET_ACCESS_KEY');
 
@@ -64,12 +68,27 @@ export class SmsService {
 
         try {
             this.logger.log(`Sending message to SQS: ${this.queueUrl}`);
-            await this.sqsClient.send(new SendMessageCommand(params));
+            const response = await this.sqsClient.send(new SendMessageCommand(params));
             this.logger.log("Message sent to SQS");
+
+            await this.smsLoggingService.logSmsSuccess({
+                phoneNo: dto.phoneNo,
+                templateName: dto.templateName,
+                attributes: dto.attributes,
+                response,
+            });
 
             return { message: "SMS sent successfully" };
         } catch (error) {
             this.logger.error(`Error sending SMS`, error);
+
+            await this.smsLoggingService.logSmsError(
+                dto.phoneNo,
+                dto.phoneNo,
+                error,
+                template_attributes
+            );
+
             throw error;
         }
     }

@@ -2,6 +2,8 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { SQSClient, SendMessageCommand } from '@aws-sdk/client-sqs';
 import { CreateEmailNotificationDto } from '../dtos/create-notification.dto';
+import { emailtemplateDetail } from '../templates/email_templates';
+import { EmailLoggingService } from './email-logging.service';
 import moment from 'moment-timezone';
 
 @Injectable()
@@ -10,7 +12,10 @@ export class EmailService {
     private readonly sqsClient: SQSClient;
     private readonly queueUrl: string;
 
-    constructor(private readonly configService: ConfigService) {
+    constructor(
+        private readonly configService: ConfigService,
+        private readonly emailLoggingService: EmailLoggingService,
+    ) {
         const accessKeyId = this.configService.get<string>('AWS_ACCESS_KEY_ID');
         const secretAccessKey = this.configService.get<string>('AWS_SECRET_ACCESS_KEY');
 
@@ -42,6 +47,12 @@ export class EmailService {
             template_attributes.created_at = moment().tz("Asia/Kolkata").format("YYYY-MM-DD HH:mm:ss");
         }
 
+        const templateInfo = await emailtemplateDetail(template_attributes);
+
+        if (!templateInfo) {
+            throw new Error("Request template not present in service");
+        }
+
         const params = {
             QueueUrl: this.queueUrl,
             MessageBody: JSON.stringify({ template_attributes }),
@@ -49,11 +60,26 @@ export class EmailService {
         };
 
         try {
-            await this.sqsClient.send(new SendMessageCommand(params));
+            const response = await this.sqsClient.send(new SendMessageCommand(params));
             this.logger.log("Email task sent to SQS");
+
+            // Log to MongoDB
+            await this.emailLoggingService.logEmailSuccess({
+                template_attributes,
+                response,
+            });
+
             return { message: "Email sent successfully" };
         } catch (error) {
             this.logger.error(`Error sending email SQS`, error);
+
+            // Log error to MongoDB
+            await this.emailLoggingService.logEmailError(
+                template_attributes?.orderId || 'unknown',
+                error,
+                template_attributes
+            );
+
             throw error;
         }
     }
