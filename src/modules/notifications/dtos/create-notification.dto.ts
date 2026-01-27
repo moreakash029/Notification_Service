@@ -46,3 +46,35 @@ export class CreateWhatsappNotificationDto {
     @IsOptional()
     sendWhatsapp?: boolean;
 }
+
+export class CreateUnifiedNotificationDto {
+    @ApiProperty({ description: 'Send SMS notification', default: false })
+    @IsBoolean()
+    @IsOptional()
+    sms?: boolean;
+
+    @ApiProperty({ description: 'Send Email notification', default: false })
+    @IsBoolean()
+    @IsOptional()
+    email?: boolean;
+
+    @ApiProperty({ description: 'Send Whatsapp notification', default: false })
+    @IsBoolean()
+    @IsOptional()
+    whatsapp?: boolean;
+
+    @ApiProperty({ description: 'SMS Notification details', required: false })
+    @IsOptional()
+    @IsObject()
+    smsDetails?: CreateSmsNotificationDto;
+
+    @ApiProperty({ description: 'Email Notification details', required: false })
+    @IsOptional()
+    @IsObject()
+    emailDetails?: CreateEmailNotificationDto;
+
+    @ApiProperty({ description: 'Whatsapp Notification details', required: false })
+    @IsOptional()
+    @IsObject()
+    whatsappDetails?: CreateWhatsappNotificationDto;
+}

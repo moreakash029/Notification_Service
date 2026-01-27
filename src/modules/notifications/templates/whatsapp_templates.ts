@@ -1,6 +1,5 @@
-// @ts-nocheck
-export const templateDetail = function (template_attributes) {
-  const whatsapp = {};
+export const templateDetail = function (template_attributes: any) {
+  const whatsapp: Record<string, any> = {};
 
   const {
     phoneNo = "",

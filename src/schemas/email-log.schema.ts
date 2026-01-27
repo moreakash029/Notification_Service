@@ -18,6 +18,9 @@ export class EmailLog extends BaseSchema {
   @Prop({ required: false })
   status: string;
 
+  @Prop({ required: false })
+  sparkpost_status: string;
+
   @Prop({ type: Object, required: false })
   response: Record<string, any>;
 

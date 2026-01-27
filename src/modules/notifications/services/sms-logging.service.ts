@@ -57,6 +57,33 @@ export class SmsLoggingService {
     }
   }
 
+  async updateStatus(sid: string, response: any): Promise<void> {
+    try {
+      // Assuming 'response.MessageId' or similar from SQS send stored in 'response' matches 'sid' if 'sid' is the MessageId.
+      // OR if 'sid' comes from the provider and we stored it in the log initially?
+      // In 'logSmsSuccess', we store 'response'. AWS SQS response has 'MessageId'.
+      // If the provider callback 'sid' corresponds to that MessageId (unlikely, usually provider has their own ID).
+      // We might need to store the provider's ID in the log if we get it during send.
+      // However, usually detailed logs are updated via callback.
+      // Let's assume we search by some ID. For now 'id' (our UUID) or 'response.MessageId'.
+      // If the callback gives us a way to link.
+      // In the legacy code, it used `Key: { id: sid }`.
+
+      // We will try to update where 'response.MessageId' matches or if we stored a custom ID.
+      // If 'sid' is external ID, we might have to search in 'response' or a new field.
+      // For now, let's assume we can match it against our 'id' or 'response.MessageId'.
+
+      const updateResult = await this.smsLogModel.updateMany(
+        { $or: [{ "response.MessageId": sid }, { "response.response.MessageId": sid }] },
+        { $set: { sms_service_response: response } }
+      );
+
+      this.logger.log(`Updated SMS status for SID ${sid}. Modified: ${updateResult.modifiedCount}`);
+    } catch (error) {
+      this.logger.error(`Failed to update SMS status: ${error.message}`);
+    }
+  }
+
   async getSmsStats(date: string): Promise<any> {
     try {
       const logs = await this.smsLogModel.find({

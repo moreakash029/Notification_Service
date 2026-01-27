@@ -33,7 +33,6 @@ export class WhatsappService {
             const response = await this.sendToProvider(templateInfo);
             this.logger.log("Whatsapp sent successfully", response);
 
-            // Log to MongoDB
             await this.whatsappLoggingService.logWhatsappSuccess(response, template_attributes);
 
             return { message: "Message sent successfully", providerResponse: response };
@@ -63,7 +62,7 @@ export class WhatsappService {
                     method: config.method,
                     url: config.url,
                     headers: config.headers,
-                    data: null // Post body is null in original code, as params are query strings
+                    data: null
                 })
             );
 

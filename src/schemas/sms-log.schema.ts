@@ -19,6 +19,9 @@ export class SmsLog extends BaseSchema {
   status: string;
 
   @Prop({ type: Object, required: false })
+  sms_service_response: Record<string, any>;
+
+  @Prop({ type: Object, required: false })
   response: Record<string, any>;
 
   @Prop({ required: false })

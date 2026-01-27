@@ -58,6 +58,27 @@ export class EmailLoggingService {
     }
   }
 
+  async updateStatus(transmissionId: string, status: string): Promise<void> {
+    try {
+      // Assuming 'response.results.id' or similar contains the transmissionId
+      // Or if we stored transmissionId separately. In the schema we have 'id' which is UUID.
+      // We need to match where 'response.id' or similar == transmissionId.
+      // Let's assume we search by a field inside validation or we trust 'id' is transmissionId?
+      // Actually, logEmailSuccess generates a new uuid.
+      // We need to find the log where the response contains the transmissionId.
+      // Sparkpost returns { results: { id: "..." } } typically.
+
+      const updateResult = await this.emailLogModel.updateMany(
+        { "response.results.id": transmissionId },
+        { $set: { sparkpost_status: status } }
+      );
+
+      this.logger.log(`Updated email status for transmissionId ${transmissionId} to ${status}. Modified: ${updateResult.modifiedCount}`);
+    } catch (error) {
+      this.logger.error(`Failed to update email status: ${error.message}`);
+    }
+  }
+
   async getEmailStats(date: string): Promise<any> {
     try {
       const logs = await this.emailLogModel.find({

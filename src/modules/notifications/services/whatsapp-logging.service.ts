@@ -90,6 +90,35 @@ export class WhatsappLoggingService {
     }
   }
 
+  async updateStatus(externalId: string, statusType: string): Promise<void> {
+    try {
+      let fieldName = "";
+      switch (statusType) {
+        case "000": fieldName = "successStatus"; break;
+        case "025": fieldName = "sentStatus"; break;
+        case "026": fieldName = "readStatus"; break;
+        case "020": fieldName = "otherStatus"; break;
+        case "003": fieldName = "unknownSubscriberStatus"; break;
+        case "010": fieldName = "deferredStatus"; break;
+        case "022": fieldName = "blockedForUserStatus"; break;
+        case "101": fieldName = "twentyFourHourExceededStatus"; break;
+        default:
+          this.logger.warn(`Unrecognized errorCode: ${statusType}`);
+          return;
+      }
+
+      const updateResult = await this.whatsappLogModel.updateMany(
+        { whatsappId: externalId },
+        { $set: { [fieldName]: "Yes" } }
+      );
+
+      this.logger.log(`Updated Whatsapp status for ID ${externalId} field ${fieldName}. Modified: ${updateResult.modifiedCount}`);
+
+    } catch (error) {
+      this.logger.error(`Failed to update Whatsapp status: ${error.message}`);
+    }
+  }
+
   async getWhatsappStats(date: string): Promise<any> {
     try {
       const logs = await this.whatsappLogModel.find({

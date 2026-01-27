@@ -17,6 +17,8 @@ import { SmsErrorLog, SmsErrorLogSchema } from '../../schemas/sms-error-log.sche
 import { EmailErrorLog, EmailErrorLogSchema } from '../../schemas/email-error-log.schema';
 import { WhatsappErrorLog, WhatsappErrorLogSchema } from '../../schemas/whatsapp-error-log.schema';
 
+import { WebhookController } from './v1/webhook.controller';
+
 @Module({
     imports: [
         ConfigModule,
@@ -30,7 +32,7 @@ import { WhatsappErrorLog, WhatsappErrorLogSchema } from '../../schemas/whatsapp
             { name: WhatsappErrorLog.name, schema: WhatsappErrorLogSchema },
         ]),
     ],
-    controllers: [NotificationsController, ReportsController],
+    controllers: [NotificationsController, ReportsController, WebhookController],
     providers: [
         SmsService,
         EmailService,

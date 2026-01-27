@@ -1,6 +1,5 @@
-// @ts-nocheck
-export const smstemplateDetail = function (template_attributes) {
-  const sms = {};
+export const smstemplateDetail = function (template_attributes: any) {
+  const sms: Record<string, any> = {};
 
   const {
     phoneNo = "",
@@ -77,8 +76,6 @@ export const smstemplateDetail = function (template_attributes) {
     url: `https://api.vialogue.in/pushapi/sendbulkmsg?username=TSC_Trans&dest=${phoneNumber}&apikey=H5Bg3PPNV3XUViqtSpH6swjkSJIXEh0t&signature=TSLEEP&msgtype=PM&msgtxt=Hi ${customerName}! Your The Sleep Company order ${orderId} is placed! We'll share the tracking link when shipped. Details:\nhttps://thesleepcompany.in/account%23view=orders\nQueries: care@thesleepcompany.in&entityid=1201159317126206525&templateid=1707172258526174945`,
     headers: {},
   };
-
-  sms.ORDER_PLACED = sms.orderReceiveTemplate;
 
   sms.shippedTemplate = {
     method: "post",
