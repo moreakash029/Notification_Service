@@ -13,7 +13,6 @@ export class WhatsappLoggingService {
 
   constructor(
     @InjectModel(WhatsappLog.name) private whatsappLogModel: Model<WhatsappLog>,
-    @InjectModel(WhatsappErrorLog.name) private whatsappErrorLogModel: Model<WhatsappErrorLog>,
   ) { }
 
   private getIndianTime(): string {
@@ -28,11 +27,41 @@ export class WhatsappLoggingService {
     return format(now, 'yyyy-MM-dd', { timeZone });
   }
 
+  async logWhatsappRequest(templateAttributes: Record<string, any>): Promise<string | null> {
+    try {
+      const id = uuidv4();
+      const cleanedAttributes = { ...templateAttributes };
+      delete cleanedAttributes['phoneNo']; // Often redundant if phone is separate, but keeping parity
+
+      const whatsappLog = new this.whatsappLogModel({
+        id,
+        phone: templateAttributes.phoneNo,
+        templateName: templateAttributes.templateName,
+        templateAttributes: cleanedAttributes,
+        status: 'PENDING',
+        createdDate: this.getFormattedDate(),
+        timeanddate: this.getIndianTime(),
+        requestBody: templateAttributes,
+      });
+
+      await whatsappLog.save();
+      return id;
+    } catch (error) {
+      this.logger.error(`Failed to log whatsapp request: ${error.message}`);
+      return null;
+    }
+  }
+
   async logWhatsappSuccess(
+    logId: string,
     whatsappResponse: any,
     templateAttributes: Record<string, any>,
   ): Promise<void> {
     try {
+      // If we have a logId, update. If not (legacy or error in req log), maybe create new?
+      // Plan was to link. If logId is null, we can create new or skip.
+      // Let's support creation if logId is missing for robustness, or just update if exists.
+
       const { phone, details, id: whatsappId, status: whatsappstatus } = whatsappResponse.response || whatsappResponse;
 
       const gupshupAttribute = {
@@ -47,72 +76,78 @@ export class WhatsappLoggingService {
         errorcode: '',
       };
 
-      const cleanedAttributes = { ...templateAttributes };
-      delete cleanedAttributes['phoneNo'];
-
-      const whatsappLog = new this.whatsappLogModel({
-        id: uuidv4(),
-        phone,
+      const updateData: any = {
+        phone, // Ensure phone is set
         details,
         whatsappId,
         whatsappstatus,
-        templateName: templateAttributes.templateName,
-        templateAttributes: cleanedAttributes,
         status: 'SUCCESS',
         response: whatsappResponse,
         ...gupshupAttribute,
-        createdDate: this.getFormattedDate(),
-        timeanddate: this.getIndianTime(),
-        requestBody: templateAttributes,
-      });
+      };
 
-      await whatsappLog.save();
-      this.logger.log(`Whatsapp log created for ${phone}`);
+      if (logId) {
+        await this.whatsappLogModel.updateOne({ id: logId }, { $set: updateData });
+        this.logger.log(`Whatsapp log updated for ${logId}`);
+      } else {
+        // Fallback: create new if no ID passed (should not happen with new flow)
+        await this.whatsappLogModel.create({
+          id: uuidv4(),
+          templateName: templateAttributes.templateName,
+          templateAttributes,
+          createdDate: this.getFormattedDate(),
+          timeanddate: this.getIndianTime(),
+          requestBody: templateAttributes,
+          ...updateData
+        });
+      }
     } catch (error) {
       this.logger.error(`Failed to log whatsapp success: ${error.message}`);
     }
   }
 
-  async logWhatsappError(phone: string, error: any, requestBody?: Record<string, any>): Promise<void> {
+  async updateStatus(externalId: string, data: any): Promise<void> {
     try {
-      const errorLog = new this.whatsappErrorLogModel({
-        id: uuidv4(),
-        phone,
-        error: error.message || JSON.stringify(error),
-        requestBody,
-        dateAndTime: this.getIndianTime(),
-      });
+      // data contains full callback payload
+      const statusType = data.type || data.errorCode; // Gupshup callback has 'type' usually for status like 'read', 'enqueued' etc. or 'errorCode' in error events.
+      // Legacy: 'data.errorCode' was passed as second arg. Now 'data' is full object.
+      // Let's assume 'data.errorCode' functionality is preserving legacy mapping.
 
-      await errorLog.save();
-      this.logger.log(`Whatsapp error log created for ${phone}`);
-    } catch (err) {
-      this.logger.error(`Failed to log whatsapp error: ${err.message}`);
-    }
-  }
-
-  async updateStatus(externalId: string, statusType: string): Promise<void> {
-    try {
       let fieldName = "";
-      switch (statusType) {
+      const errorCode = data.errorCode || data.type; // Adapt
+
+      switch (errorCode) {
         case "000": fieldName = "successStatus"; break;
-        case "025": fieldName = "sentStatus"; break;
-        case "026": fieldName = "readStatus"; break;
+        case "025": fieldName = "sentStatus"; break; // sent
+        case "026": fieldName = "readStatus"; break; // read
         case "020": fieldName = "otherStatus"; break;
         case "003": fieldName = "unknownSubscriberStatus"; break;
         case "010": fieldName = "deferredStatus"; break;
         case "022": fieldName = "blockedForUserStatus"; break;
         case "101": fieldName = "twentyFourHourExceededStatus"; break;
+        // extended mappings for 'sent', 'delivered', 'read' strings if they appear in type
+        case "sent": fieldName = "sentStatus"; break;
+        case "read": fieldName = "readStatus"; break;
+        case "delivered": fieldName = "successStatus"; break;
         default:
-          this.logger.warn(`Unrecognized errorCode: ${statusType}`);
-          return;
+          // Just log payload
+          break;
+      }
+
+      const updateOps: any = {
+        $push: { callbackHistory: data }
+      };
+
+      if (fieldName) {
+        updateOps.$set = { [fieldName]: "Yes" };
       }
 
       const updateResult = await this.whatsappLogModel.updateMany(
         { whatsappId: externalId },
-        { $set: { [fieldName]: "Yes" } }
+        updateOps
       );
 
-      this.logger.log(`Updated Whatsapp status for ID ${externalId} field ${fieldName}. Modified: ${updateResult.modifiedCount}`);
+      this.logger.log(`Updated Whatsapp status for ID ${externalId}. Modified: ${updateResult.modifiedCount}`);
 
     } catch (error) {
       this.logger.error(`Failed to update Whatsapp status: ${error.message}`);

@@ -1,7 +1,7 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { BaseSchema } from '@thesleepcompany/db-wrapper';
 
-@Schema({ timestamps: true })
+@Schema({ timestamps: true, collection: 'notification-whatsapp-hit-logs-dev' })
 export class WhatsappLog extends BaseSchema {
   @Prop({ required: true })
   id: string;
@@ -71,6 +71,9 @@ export class WhatsappLog extends BaseSchema {
 
   @Prop({ type: Object, required: false })
   requestBody: Record<string, any>;
+
+  @Prop({ type: [Object], required: false })
+  callbackHistory: Record<string, any>[];
 }
 
 export const WhatsappLogSchema = SchemaFactory.createForClass(WhatsappLog);

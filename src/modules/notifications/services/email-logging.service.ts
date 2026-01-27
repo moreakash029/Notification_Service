@@ -2,7 +2,6 @@ import { Injectable, Logger } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { v4 as uuidv4 } from 'uuid';
-import moment from 'moment-timezone';
 import { EmailLog } from '../../../schemas/email-log.schema';
 import { EmailErrorLog } from '../../../schemas/email-error-log.schema';
 
@@ -12,7 +11,6 @@ export class EmailLoggingService {
 
   constructor(
     @InjectModel(EmailLog.name) private emailLogModel: Model<EmailLog>,
-    @InjectModel(EmailErrorLog.name) private emailErrorLogModel: Model<EmailErrorLog>,
   ) { }
 
   private getIndianTime(): string {
@@ -21,42 +19,58 @@ export class EmailLoggingService {
       .replace('Z', '+05:30');
   }
 
-  async logEmailSuccess(data: Record<string, any>): Promise<void> {
+  async logEmailRequest(templateAttributes: Record<string, any>): Promise<string | null> {
     try {
+      const id = uuidv4();
       const emailLog = new this.emailLogModel({
-        id: uuidv4(),
-        email: data.template_attributes?.email,
-        templateName: data.template_attributes?.templateName,
-        templateAttributes: data.template_attributes,
-        status: 'SUCCESS',
-        response: data.response,
+        id,
+        orderId: templateAttributes.orderId,
+        templateName: templateAttributes.templateName,
+        templateAttributes,
+        status: 'PENDING',
         timeanddate: this.getIndianTime(),
-        requestBody: data,
+        requestBody: templateAttributes,
       });
-
       await emailLog.save();
-      this.logger.log(`Email log created`);
+      return id;
+    } catch (error) {
+      this.logger.error(`Failed to log email request: ${error.message}`);
+      return null;
+    }
+  }
+
+  async logEmailSuccess(logId: string, data: Record<string, any>): Promise<void> {
+    try {
+      if (logId) {
+        await this.emailLogModel.updateOne({ id: logId }, {
+          $set: {
+            status: 'SUCCESS',
+            response: data.response,
+          }
+        });
+        this.logger.log(`Email log updated for ${logId}`);
+      } else {
+        const emailLog = new this.emailLogModel({
+          id: uuidv4(),
+          orderId: data.template_attributes?.orderId, // Handle varying structures if needed
+          templateName: data.template_attributes?.templateName,
+          templateAttributes: data.template_attributes,
+          status: 'SUCCESS',
+          response: data.response,
+          timeanddate: this.getIndianTime(),
+          requestBody: data.template_attributes,
+        });
+
+        await emailLog.save();
+        this.logger.log(`Email log created for ${data.template_attributes?.orderId}`);
+      }
+
     } catch (error) {
       this.logger.error(`Failed to log email success: ${error.message}`);
     }
   }
 
-  async logEmailError(orderId: string, error: any, requestBody?: Record<string, any>): Promise<void> {
-    try {
-      const errorLog = new this.emailErrorLogModel({
-        id: uuidv4(),
-        orderId,
-        error: error.message || JSON.stringify(error),
-        requestBody,
-        dateAndTime: this.getIndianTime(),
-      });
-
-      await errorLog.save();
-      this.logger.log(`Email error log created for ${orderId}`);
-    } catch (err) {
-      this.logger.error(`Failed to log email error: ${err.message}`);
-    }
-  }
+  // Removed logEmailError and errorLogModel
 
   async updateStatus(transmissionId: string, status: string): Promise<void> {
     try {

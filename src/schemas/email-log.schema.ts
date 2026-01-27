@@ -1,7 +1,7 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { BaseSchema } from '@thesleepcompany/db-wrapper';
 
-@Schema({ timestamps: true })
+@Schema({ timestamps: true, collection: 'notification-email-hit-logs-dev' })
 export class EmailLog extends BaseSchema {
   @Prop({ required: true })
   id: string;

@@ -27,7 +27,7 @@ export class CreateEmailNotificationDto {
     @ApiProperty()
     @IsObject()
     @IsNotEmpty()
-    template_attributes: Record<string, any>;
+    details: Record<string, any>;
 
     @ApiProperty({ example: true, description: 'Whether to send Email notification', default: true })
     @IsBoolean()

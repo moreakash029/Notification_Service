@@ -11,7 +11,6 @@ export class SmsLoggingService {
 
   constructor(
     @InjectModel(SmsLog.name) private smsLogModel: Model<SmsLog>,
-    @InjectModel(SmsErrorLog.name) private smsErrorLogModel: Model<SmsErrorLog>,
   ) { }
 
   private getIndianTime(): string {
@@ -20,59 +19,59 @@ export class SmsLoggingService {
       .replace('Z', '+05:30');
   }
 
-  async logSmsSuccess(data: Record<string, any>): Promise<void> {
+  async logSmsRequest(phoneNo: string, templateName: string, attributes: Record<string, any>): Promise<string | null> {
     try {
+      const id = uuidv4();
       const smsLog = new this.smsLogModel({
-        id: uuidv4(),
-        phoneNo: data.phoneNo,
-        templateName: data.templateName,
-        templateAttributes: data.attributes,
-        status: 'SUCCESS',
-        response: data.response,
+        id,
+        phoneNo,
+        templateName,
+        templateAttributes: attributes,
+        status: 'PENDING',
         timeanddate: this.getIndianTime(),
-        requestBody: data,
+        requestBody: { phoneNo, templateName, attributes },
       });
-
       await smsLog.save();
-      this.logger.log(`SMS log created for ${data.phoneNo}`);
+      return id;
+    } catch (error) {
+      this.logger.error(`Failed to log SMS request: ${error.message}`);
+      return null;
+    }
+  }
+
+  async logSmsSuccess(logId: string, data: Record<string, any>): Promise<void> {
+    try {
+      if (logId) {
+        await this.smsLogModel.updateOne({ id: logId }, {
+          $set: {
+            status: 'SUCCESS',
+            response: data.response,
+          }
+        });
+        this.logger.log(`SMS log updated for ${logId}`);
+      } else {
+        // Fallback
+        const smsLog = new this.smsLogModel({
+          id: uuidv4(),
+          phoneNo: data.phoneNo,
+          templateName: data.templateName,
+          templateAttributes: data.attributes,
+          status: 'SUCCESS',
+          response: data.response,
+          timeanddate: this.getIndianTime(),
+          requestBody: data,
+        });
+        await smsLog.save();
+      }
     } catch (error) {
       this.logger.error(`Failed to log SMS success: ${error.message}`);
     }
   }
 
-  async logSmsError(phoneNo: string, orderId: string, error: any, requestBody?: Record<string, any>): Promise<void> {
-    try {
-      const errorLog = new this.smsErrorLogModel({
-        id: uuidv4(),
-        orderId,
-        error: error.message || JSON.stringify(error),
-        requestBody,
-        dateAndTime: this.getIndianTime(),
-      });
-
-      await errorLog.save();
-      this.logger.log(`SMS error log created for ${orderId}`);
-    } catch (err) {
-      this.logger.error(`Failed to log SMS error: ${err.message}`);
-    }
-  }
+  // Removed logSmsError
 
   async updateStatus(sid: string, response: any): Promise<void> {
     try {
-      // Assuming 'response.MessageId' or similar from SQS send stored in 'response' matches 'sid' if 'sid' is the MessageId.
-      // OR if 'sid' comes from the provider and we stored it in the log initially?
-      // In 'logSmsSuccess', we store 'response'. AWS SQS response has 'MessageId'.
-      // If the provider callback 'sid' corresponds to that MessageId (unlikely, usually provider has their own ID).
-      // We might need to store the provider's ID in the log if we get it during send.
-      // However, usually detailed logs are updated via callback.
-      // Let's assume we search by some ID. For now 'id' (our UUID) or 'response.MessageId'.
-      // If the callback gives us a way to link.
-      // In the legacy code, it used `Key: { id: sid }`.
-
-      // We will try to update where 'response.MessageId' matches or if we stored a custom ID.
-      // If 'sid' is external ID, we might have to search in 'response' or a new field.
-      // For now, let's assume we can match it against our 'id' or 'response.MessageId'.
-
       const updateResult = await this.smsLogModel.updateMany(
         { $or: [{ "response.MessageId": sid }, { "response.response.MessageId": sid }] },
         { $set: { sms_service_response: response } }

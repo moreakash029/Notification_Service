@@ -1,36 +1,46 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { SQSClient, SendMessageCommand } from '@aws-sdk/client-sqs';
+import * as stompit from 'stompit';
 import { CreateEmailNotificationDto } from '../dtos/create-notification.dto';
 import { emailtemplateDetail } from '../templates/email_templates';
 import { EmailLoggingService } from './email-logging.service';
-import moment from 'moment-timezone';
+import { format } from "date-fns-tz";
 
 @Injectable()
 export class EmailService {
     private readonly logger = new Logger(EmailService.name);
-    private readonly sqsClient: SQSClient;
-    private readonly queueUrl: string;
+    private readonly queueName: string;
+    private readonly connectOptions: any;
+    private readonly timeZone: string;
 
     constructor(
         private readonly configService: ConfigService,
         private readonly emailLoggingService: EmailLoggingService,
     ) {
-        const accessKeyId = this.configService.get<string>('AWS_ACCESS_KEY_ID');
-        const secretAccessKey = this.configService.get<string>('AWS_SECRET_ACCESS_KEY');
 
-        if (!accessKeyId || !secretAccessKey) {
-            throw new Error('AWS_ACCESS_KEY_ID or AWS_SECRET_ACCESS_KEY is missing in configuration');
+        const host = this.configService.get<string>('AMAZON_MQ_HOST');
+        const port = Number(this.configService.get('AMAZON_MQ_PORT')) || 61614;
+        const username = this.configService.get<string>('AMAZON_MQ_USERNAME');
+        const password = this.configService.get<string>('AMAZON_MQ_PASSWORD');
+
+        if (!host || !username || !password) {
+            throw new Error('Amazon MQ config missing');
         }
 
-        this.sqsClient = new SQSClient({
-            region: this.configService.get<string>('AWS_REGION', 'ap-south-1'),
-            credentials: {
-                accessKeyId,
-                secretAccessKey,
-            }
-        });
-        this.queueUrl = this.configService.get<string>('SQS_URL_SMS') || "https://sqs.ap-south-1.amazonaws.com/440586161847/sms-createorder-dev";
+        this.connectOptions = {
+            host,
+            port,
+            ssl: true,
+            connectHeaders: {
+                host: '/',
+                login: username,
+                passcode: password,
+                'heart-beat': '5000,5000',
+            },
+        };
+
+        this.queueName = "email_queue";
+        this.timeZone = "Asia/Kolkata";
     }
 
     async sendEmail(dto: CreateEmailNotificationDto) {
@@ -41,11 +51,18 @@ export class EmailService {
 
         this.logger.log(`Processing Email notification`);
 
-        const { template_attributes } = dto;
+        const template_attributes = dto.details || dto;
 
         if (!template_attributes.created_at) {
-            template_attributes.created_at = moment().tz("Asia/Kolkata").format("YYYY-MM-DD HH:mm:ss");
+            const now = new Date();
+            template_attributes.created_at = format(now, "yyyy-MM-dd HH:mm:ss", {
+                timeZone: this.timeZone,
+            });
         }
+
+
+        // Log entry
+        const logId = await this.emailLoggingService.logEmailRequest(template_attributes) || "";
 
         const templateInfo = await emailtemplateDetail(template_attributes);
 
@@ -53,34 +70,42 @@ export class EmailService {
             throw new Error("Request template not present in service");
         }
 
-        const params = {
-            QueueUrl: this.queueUrl,
-            MessageBody: JSON.stringify({ template_attributes }),
-            DelaySeconds: 0,
-        };
+        return new Promise((resolve, reject) => {
+            stompit.connect(this.connectOptions, (error: Error | null, client: stompit.Client) => {
+                if (error) {
+                    this.logger.error(`Error connecting to Amazon MQ for Email: ${error.message}`, error);
+                    // Error logging removed
+                    reject(error);
+                    return;
+                }
 
-        try {
-            const response = await this.sqsClient.send(new SendMessageCommand(params));
-            this.logger.log("Email task sent to SQS");
+                const frame = client.send({
+                    'destination': `/queue/${this.queueName}`,
+                    'content-type': 'application/json'
+                });
 
-            // Log to MongoDB
-            await this.emailLoggingService.logEmailSuccess({
-                template_attributes,
-                response,
+                frame.write(JSON.stringify({ template_attributes }));
+                frame.end();
+
+                setTimeout(() => {
+                    client.disconnect();
+                    this.logger.log('Message sent to Amazon MQ');
+
+                    this.emailLoggingService.logEmailSuccess(logId, {
+                        template_attributes,
+                        response: { message: 'Sent to MQ' },
+                    });
+
+                    resolve({ message: 'Email sent successfully' });
+                }, 100);
+
+                client.on('error', (err: any) => {
+                    this.logger.error('STOMP Client Error (Email)', err);
+                    // Error logging removed
+                    reject(err);
+                });
+
             });
-
-            return { message: "Email sent successfully" };
-        } catch (error) {
-            this.logger.error(`Error sending email SQS`, error);
-
-            // Log error to MongoDB
-            await this.emailLoggingService.logEmailError(
-                template_attributes?.orderId || 'unknown',
-                error,
-                template_attributes
-            );
-
-            throw error;
-        }
+        });
     }
 }

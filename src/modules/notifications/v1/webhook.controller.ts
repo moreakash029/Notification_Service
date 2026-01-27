@@ -108,8 +108,8 @@ export class WebhookController {
             }
 
             for (const data of gupshupData) {
-                if (data.externalId && data.errorCode) {
-                    await this.whatsappLoggingService.updateStatus(data.externalId, data.errorCode);
+                if (data.externalId) {
+                    await this.whatsappLoggingService.updateStatus(data.externalId, data);
                 }
             }
 

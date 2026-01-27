@@ -9,27 +9,25 @@ import { WhatsappService } from './services/whatsapp.service';
 import { SmsLoggingService } from './services/sms-logging.service';
 import { EmailLoggingService } from './services/email-logging.service';
 import { WhatsappLoggingService } from './services/whatsapp-logging.service';
-import { HttpModule } from '@nestjs/axios';
 import { SmsLog, SmsLogSchema } from '../../schemas/sms-log.schema';
 import { EmailLog, EmailLogSchema } from '../../schemas/email-log.schema';
 import { WhatsappLog, WhatsappLogSchema } from '../../schemas/whatsapp-log.schema';
-import { SmsErrorLog, SmsErrorLogSchema } from '../../schemas/sms-error-log.schema';
-import { EmailErrorLog, EmailErrorLogSchema } from '../../schemas/email-error-log.schema';
-import { WhatsappErrorLog, WhatsappErrorLogSchema } from '../../schemas/whatsapp-error-log.schema';
+// import { SmsErrorLog, SmsErrorLogSchema } from '../../schemas/sms-error-log.schema';
+// import { EmailErrorLog, EmailErrorLogSchema } from '../../schemas/email-error-log.schema';
+// import { WhatsappErrorLog, WhatsappErrorLogSchema } from '../../schemas/whatsapp-error-log.schema';
 
 import { WebhookController } from './v1/webhook.controller';
 
 @Module({
     imports: [
         ConfigModule,
-        HttpModule,
         MongooseModule.forFeature([
             { name: SmsLog.name, schema: SmsLogSchema },
             { name: EmailLog.name, schema: EmailLogSchema },
             { name: WhatsappLog.name, schema: WhatsappLogSchema },
-            { name: SmsErrorLog.name, schema: SmsErrorLogSchema },
-            { name: EmailErrorLog.name, schema: EmailErrorLogSchema },
-            { name: WhatsappErrorLog.name, schema: WhatsappErrorLogSchema },
+            // { name: SmsErrorLog.name, schema: SmsErrorLogSchema },
+            // { name: EmailErrorLog.name, schema: EmailErrorLogSchema },
+            // { name: WhatsappErrorLog.name, schema: WhatsappErrorLogSchema },
         ]),
     ],
     controllers: [NotificationsController, ReportsController, WebhookController],
