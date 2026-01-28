@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import * as stompit from 'stompit';
+import * as amqp from 'amqplib';
 import { CreateEmailNotificationDto } from '../dtos/create-notification.dto';
 import { emailtemplateDetail } from '../templates/email_templates';
 import { EmailLoggingService } from './email-logging.service';
@@ -10,102 +10,86 @@ import { format } from "date-fns-tz";
 export class EmailService {
     private readonly logger = new Logger(EmailService.name);
     private readonly queueName: string;
-    private readonly connectOptions: any;
+    private readonly rabbitMQUrl: string;
     private readonly timeZone: string;
 
     constructor(
         private readonly configService: ConfigService,
         private readonly emailLoggingService: EmailLoggingService,
     ) {
-
         const host = this.configService.get<string>('AMAZON_MQ_HOST');
-        const port = Number(this.configService.get('AMAZON_MQ_PORT')) || 61614;
+        const port = Number(this.configService.get('AMAZON_MQ_PORT')) || 5672;
         const username = this.configService.get<string>('AMAZON_MQ_USERNAME');
         const password = this.configService.get<string>('AMAZON_MQ_PASSWORD');
+        const vhost = this.configService.get<string>('RABBITMQ_VHOST') || '/';
 
         if (!host || !username || !password) {
             throw new Error('Amazon MQ config missing');
         }
 
-        this.connectOptions = {
-            host,
-            port,
-            ssl: true,
-            connectHeaders: {
-                host: '/',
-                login: username,
-                passcode: password,
-                'heart-beat': '5000,5000',
-            },
-        };
+        const protocol = port === 5671 ? 'amqps' : 'amqp';
+        this.rabbitMQUrl = `${protocol}://${username}:${password}@${host}:${port}${vhost}`;
 
         this.queueName = "email_queue";
         this.timeZone = "Asia/Kolkata";
     }
 
     async sendEmail(dto: CreateEmailNotificationDto) {
-        if (dto.sendEmail === false) {
-            this.logger.log(`Email sending is disabled`);
-            return { message: "Email sending is disabled" };
-        }
+        let connection;
+        let channel;
 
-        this.logger.log(`Processing Email notification`);
+        try {
+            if (dto.sendEmail === false) {
+                this.logger.log(`Email sending is disabled`);
+                return { message: "Email sending is disabled" };
+            }
 
-        const template_attributes = dto.details || dto;
+            this.logger.log(`Processing Email notification`);
 
-        if (!template_attributes.created_at) {
-            const now = new Date();
-            template_attributes.created_at = format(now, "yyyy-MM-dd HH:mm:ss", {
-                timeZone: this.timeZone,
-            });
-        }
+            const template_attributes: Record<string, any> = dto.details || dto.template_attributes || dto;
 
-
-        // Log entry
-        const logId = await this.emailLoggingService.logEmailRequest(template_attributes) || "";
-
-        const templateInfo = await emailtemplateDetail(template_attributes);
-
-        if (!templateInfo) {
-            throw new Error("Request template not present in service");
-        }
-
-        return new Promise((resolve, reject) => {
-            stompit.connect(this.connectOptions, (error: Error | null, client: stompit.Client) => {
-                if (error) {
-                    this.logger.error(`Error connecting to Amazon MQ for Email: ${error.message}`, error);
-                    // Error logging removed
-                    reject(error);
-                    return;
-                }
-
-                const frame = client.send({
-                    'destination': `/queue/${this.queueName}`,
-                    'content-type': 'application/json'
+            if (!template_attributes.created_at) {
+                const now = new Date();
+                template_attributes.created_at = format(now, "yyyy-MM-dd HH:mm:ss", {
+                    timeZone: this.timeZone,
                 });
+            }
 
-                frame.write(JSON.stringify({ template_attributes }));
-                frame.end();
+            const logId = await this.emailLoggingService.logEmailRequest(template_attributes) || "";
 
-                setTimeout(() => {
-                    client.disconnect();
-                    this.logger.log('Message sent to Amazon MQ');
+            const templateInfo = await emailtemplateDetail(template_attributes);
 
-                    this.emailLoggingService.logEmailSuccess(logId, {
-                        template_attributes,
-                        response: { message: 'Sent to MQ' },
-                    });
+            if (!templateInfo) {
+                throw new Error("Request template not present in service");
+            }
 
-                    resolve({ message: 'Email sent successfully' });
-                }, 100);
+            connection = await amqp.connect(this.rabbitMQUrl);
+            channel = await connection.createChannel();
 
-                client.on('error', (err: any) => {
-                    this.logger.error('STOMP Client Error (Email)', err);
-                    // Error logging removed
-                    reject(err);
-                });
+            await channel.assertQueue(this.queueName, { durable: true });
 
+            const messageBuffer = Buffer.from(JSON.stringify({ template_attributes }));
+            channel.sendToQueue(this.queueName, messageBuffer, { persistent: true });
+
+            this.logger.log('Message sent to RabbitMQ');
+
+            await this.emailLoggingService.logEmailSuccess(logId, {
+                template_attributes,
+                response: { message: 'Sent to MQ' },
             });
-        });
+
+            return { message: 'Email sent successfully' };
+
+        } catch (error) {
+            this.logger.error(`Error sending Email`, error);
+            throw error;
+        } finally {
+            try {
+                if (channel) await channel.close();
+                if (connection) await connection.close();
+            } catch (closeError) {
+                this.logger.error('Error closing RabbitMQ connection', closeError);
+            }
+        }
     }
 }

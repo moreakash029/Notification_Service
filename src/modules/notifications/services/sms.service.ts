@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import * as stompit from 'stompit';
+import * as amqp from 'amqplib';
 import { CreateSmsNotificationDto } from '../dtos/create-notification.dto';
 import { smstemplateDetail } from '../templates/sms_templates';
 import { SmsLoggingService } from './sms-logging.service';
@@ -10,38 +10,33 @@ import moment from 'moment';
 export class SmsService {
     private readonly logger = new Logger(SmsService.name);
     private readonly queueName: string;
-    private readonly connectOptions: any;
+    private readonly rabbitMQUrl: string;
 
     constructor(
         private readonly configService: ConfigService,
         private readonly smsLoggingService: SmsLoggingService,
     ) {
         const host = this.configService.get<string>('AMAZON_MQ_HOST');
-        const port = Number(this.configService.get('AMAZON_MQ_PORT')) || 61614;
+        const port = Number(this.configService.get('AMAZON_MQ_PORT')) || 5672;
         const username = this.configService.get<string>('AMAZON_MQ_USERNAME');
         const password = this.configService.get<string>('AMAZON_MQ_PASSWORD');
+        const vhost = this.configService.get<string>('RABBITMQ_VHOST') || '/';
 
         if (!host || !username || !password) {
             throw new Error('Amazon MQ config missing');
         }
 
-        this.connectOptions = {
-            host,
-            port,
-            ssl: true,
-            connectHeaders: {
-                host: '/',
-                login: username,
-                passcode: password,
-                'heart-beat': '5000,5000',
-            },
-        };
-
+        // Construct RabbitMQ connection URL
+        const protocol = port === 5671 ? 'amqps' : 'amqp';
+        this.rabbitMQUrl = `${protocol}://${username}:${password}@${host}:${port}${vhost}`;
 
         this.queueName = "sms_queue";
     }
 
     async sendSms(dto: CreateSmsNotificationDto) {
+        let connection;
+        let channel;
+
         try {
             if (dto.sendSms === false) {
                 this.logger.log(`SMS sending is disabled for ${dto.phoneNo}`);
@@ -72,47 +67,39 @@ export class SmsService {
                 throw new Error("Request template not present in service");
             }
 
-            return new Promise((resolve, reject) => {
-                stompit.connect(this.connectOptions, (error: Error | null, client: stompit.Client) => {
-                    if (error) {
-                        this.logger.error(`Error connecting to Amazon MQ: ${error.message}`, error);
-                        reject(error);
-                        return;
-                    }
+            // Connect to RabbitMQ
+            connection = await amqp.connect(this.rabbitMQUrl);
+            channel = await connection.createChannel();
 
-                    const frame = client.send({
-                        'destination': `/queue/${this.queueName}`,
-                        'content-type': 'application/json'
-                    });
+            // Assert queue exists (create if not)
+            await channel.assertQueue(this.queueName, { durable: true });
 
-                    frame.write(JSON.stringify({ template_attributes }));
-                    frame.end();
+            // Send message to queue
+            const messageBuffer = Buffer.from(JSON.stringify({ template_attributes }));
+            channel.sendToQueue(this.queueName, messageBuffer, { persistent: true });
 
-                    setTimeout(() => {
-                        client.disconnect();
-                        this.logger.log('Message sent to Amazon MQ');
+            this.logger.log('Message sent to RabbitMQ');
 
-                        this.smsLoggingService.logSmsSuccess(logId, {
-                            phoneNo: dto.phoneNo,
-                            templateName: dto.templateName,
-                            attributes: dto.attributes,
-                            response: { message: 'Sent to MQ' },
-                        });
-
-                        resolve({ message: 'SMS sent successfully' });
-                    }, 100);
-
-                    client.on('error', (err: any) => {
-                        this.logger.error('STOMP Client Error (SMS)', err);
-                        // Error logging to DB removed
-                        reject(err);
-                    });
-
-                });
+            await this.smsLoggingService.logSmsSuccess(logId, {
+                phoneNo: dto.phoneNo,
+                templateName: dto.templateName,
+                attributes: dto.attributes,
+                response: { message: 'Sent to MQ' },
             });
+
+            return { message: 'SMS sent successfully' };
+
         } catch (error) {
             this.logger.error('sendSms crashed', error);
             throw error;
+        } finally {
+            // Clean up connections
+            try {
+                if (channel) await channel.close();
+                if (connection) await connection.close();
+            } catch (closeError) {
+                this.logger.error('Error closing RabbitMQ connection', closeError);
+            }
         }
     }
 }

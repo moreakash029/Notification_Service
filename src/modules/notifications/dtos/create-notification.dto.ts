@@ -24,10 +24,15 @@ export class CreateSmsNotificationDto {
 }
 
 export class CreateEmailNotificationDto {
-    @ApiProperty()
+    @ApiProperty({ required: false, description: 'Email template details' })
     @IsObject()
-    @IsNotEmpty()
-    details: Record<string, any>;
+    @IsOptional()
+    details?: Record<string, any>;
+
+    @ApiProperty({ required: false, description: 'Alternative field for email template attributes (backward compatibility)' })
+    @IsObject()
+    @IsOptional()
+    template_attributes?: Record<string, any>;
 
     @ApiProperty({ example: true, description: 'Whether to send Email notification', default: true })
     @IsBoolean()
